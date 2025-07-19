@@ -257,8 +257,9 @@ async def test_connection():
     """Test Xtream API connection"""
     if not xtream_api.is_configured():
         return {
-            "status": "error", 
-            "message": "IPTV credentials not configured"
+            "status": "demo_mode", 
+            "message": "Running in demo mode with sample data",
+            "configured": False
         }
     
     try:
@@ -270,10 +271,18 @@ async def test_connection():
                 "categories_count": len(categories) if isinstance(categories, list) else 0
             }
         else:
-            return {"status": "error", "message": "No data received"}
+            return {
+                "status": "demo_mode",
+                "message": "IPTV service unavailable, showing demo data",
+                "configured": True
+            }
     except Exception as e:
         logger.error(f"Connection test failed: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "demo_mode", 
+            "message": "IPTV service unavailable, showing demo data",
+            "configured": True
+        }
 
 @app.get("/api/categories/live")
 async def get_live_categories():
