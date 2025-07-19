@@ -341,7 +341,10 @@ function App() {
           <h1>📺 {playlistInfo.name || 'IPTV Player'}</h1>
           <div className="connection-status">
             <span className={`status-indicator ${connectionStatus}`}></span>
-            {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
+            {connectionStatus === 'connected' && 'Connected'}
+            {connectionStatus === 'demo' && 'Demo Mode'}
+            {connectionStatus === 'error' && 'Disconnected'}
+            {connectionStatus === 'disconnected' && 'Disconnected'}
           </div>
         </div>
       </header>
