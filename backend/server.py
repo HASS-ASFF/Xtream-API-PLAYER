@@ -115,9 +115,16 @@ class XtreamAPI:
     async def get_live_categories(self):
         """Get live TV categories"""
         if not self.is_configured():
-            return []
+            # Return demo data when not configured
+            return [
+                {"category_id": 1, "category_name": "Sports"},
+                {"category_id": 2, "category_name": "News"},
+                {"category_id": 3, "category_name": "Entertainment"},
+                {"category_id": 4, "category_name": "Movies"}
+            ]
         url = self.build_url('get_live_categories')
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_live_streams(self, category_id: Optional[int] = None):
         """Get live streams"""
