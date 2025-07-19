@@ -274,6 +274,9 @@ async def get_live_streams(category_id: Optional[int] = None):
             for stream in streams:
                 if 'stream_id' in stream:
                     stream['stream_url'] = xtream_api.get_stream_url(stream['stream_id'], 'live')
+                    # Add fallback data for better UX
+                    if 'name' not in stream:
+                        stream['name'] = f"Channel {stream.get('stream_id', 'Unknown')}"
         return {"streams": streams}
     except Exception as e:
         logger.error(f"Error fetching live streams: {str(e)}")
