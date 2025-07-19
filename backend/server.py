@@ -129,12 +129,46 @@ class XtreamAPI:
     async def get_live_streams(self, category_id: Optional[int] = None):
         """Get live streams"""
         if not self.is_configured():
-            return []
+            # Return demo data when not configured
+            demo_streams = [
+                {
+                    "stream_id": 1001,
+                    "name": "BBC News HD",
+                    "category_name": "News",
+                    "stream_icon": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=100&h=100&fit=crop",
+                    "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+                },
+                {
+                    "stream_id": 1002,
+                    "name": "ESPN Sports",
+                    "category_name": "Sports", 
+                    "stream_icon": "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=100&h=100&fit=crop",
+                    "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+                },
+                {
+                    "stream_id": 1003,
+                    "name": "Movie Channel HD",
+                    "category_name": "Movies",
+                    "stream_icon": "https://images.unsplash.com/photo-1489599316490-e2266c87b264?w=100&h=100&fit=crop",
+                    "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+                }
+            ]
+            
+            if category_id:
+                # Filter by category for demo
+                category_map = {1: "Sports", 2: "News", 3: "Entertainment", 4: "Movies"}
+                target_category = category_map.get(category_id)
+                if target_category:
+                    demo_streams = [s for s in demo_streams if s["category_name"] == target_category]
+            
+            return demo_streams
+            
         params = {}
         if category_id:
             params['category_id'] = category_id
         url = self.build_url('get_live_streams', **params)
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_vod_categories(self):
         """Get VOD categories"""
