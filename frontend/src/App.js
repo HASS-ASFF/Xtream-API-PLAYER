@@ -292,13 +292,33 @@ function App() {
     }
   };
 
-  // Initialize app
   useEffect(() => {
     fetchPlaylistInfo();
     testConnection();
     fetchCategories();
     fetchStreams('live'); // Load initial content
   }, []);
+
+  // Update connection status based on test results
+  useEffect(() => {
+    const updateConnectionStatus = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/xtream/test`);
+        const data = await response.json();
+        if (data.status === 'success') {
+          setConnectionStatus('connected');
+        } else if (data.status === 'demo_mode') {
+          setConnectionStatus('demo');
+        } else {
+          setConnectionStatus('error');
+        }
+      } catch (err) {
+        setConnectionStatus('error');
+      }
+    };
+    
+    updateConnectionStatus();
+  }, [BACKEND_URL]);
 
   // Handle search input
   useEffect(() => {
