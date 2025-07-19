@@ -333,14 +333,14 @@ async def get_live_streams(category_id: Optional[int] = None):
     """Get live streams"""
     try:
         streams = await xtream_api.get_live_streams(category_id)
-        # Add stream URLs to each stream
+        # Only add stream URLs from Xtream API if streams don't already have URLs
         if isinstance(streams, list):
             for stream in streams:
-                if 'stream_id' in stream:
+                if 'stream_id' in stream and 'stream_url' not in stream:
                     stream['stream_url'] = xtream_api.get_stream_url(stream['stream_id'], 'live')
-                    # Add fallback data for better UX
-                    if 'name' not in stream:
-                        stream['name'] = f"Channel {stream.get('stream_id', 'Unknown')}"
+                # Add fallback data for better UX
+                if 'name' not in stream:
+                    stream['name'] = f"Channel {stream.get('stream_id', 'Unknown')}"
         return {"streams": streams}
     except Exception as e:
         logger.error(f"Error fetching live streams: {str(e)}")
