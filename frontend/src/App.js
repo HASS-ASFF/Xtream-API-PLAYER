@@ -1,6 +1,174 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
+// Setup form component for Xtream Codes credentials
+const SetupForm = ({ onSetup, isLoading }) => {
+  const [credentials, setCredentials] = useState({
+    playlistName: '',
+    username: '',
+    password: '',
+    serverUrl: ''
+  });
+  const [errors, setErrors] = useState({});
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setCredentials(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if (!credentials.username.trim()) {
+      newErrors.username = 'Username is required';
+    }
+    
+    if (!credentials.password.trim()) {
+      newErrors.password = 'Password is required';
+    }
+    
+    if (!credentials.serverUrl.trim()) {
+      newErrors.serverUrl = 'Server URL is required';
+    } else if (!credentials.serverUrl.startsWith('http://') && !credentials.serverUrl.startsWith('https://')) {
+      newErrors.serverUrl = 'Server URL must start with http:// or https://';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (validateForm()) {
+      onSetup(credentials);
+    }
+  };
+
+  const fillDemoCredentials = () => {
+    setCredentials({
+      playlistName: 'my playlist',
+      username: 'eeaa4069e9',
+      password: 'ff9abaf49c',
+      serverUrl: 'http://answer65355.cdn-only.me'
+    });
+  };
+
+  return (
+    <div className="setup-container">
+      <div className="setup-form">
+        <div className="setup-header">
+          <h1>📺 IPTV Player Setup</h1>
+          <p>Enter your Xtream Codes API credentials to get started</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="credentials-form">
+          <div className="form-group">
+            <label htmlFor="playlistName">Playlist Name (Optional)</label>
+            <input
+              type="text"
+              id="playlistName"
+              name="playlistName"
+              value={credentials.playlistName}
+              onChange={handleChange}
+              placeholder="My IPTV Playlist"
+              className="form-input"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="serverUrl">Server URL *</label>
+            <input
+              type="text"
+              id="serverUrl"
+              name="serverUrl"
+              value={credentials.serverUrl}
+              onChange={handleChange}
+              placeholder="http://yourserver.com:8080"
+              className={`form-input ${errors.serverUrl ? 'error' : ''}`}
+            />
+            {errors.serverUrl && <span className="error-text">{errors.serverUrl}</span>}
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="username">Username *</label>
+              <input
+                type="text"
+                id="username"
+                name="username"
+                value={credentials.username}
+                onChange={handleChange}
+                placeholder="Your username"
+                className={`form-input ${errors.username ? 'error' : ''}`}
+              />
+              {errors.username && <span className="error-text">{errors.username}</span>}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">Password *</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                value={credentials.password}
+                onChange={handleChange}
+                placeholder="Your password"
+                className={`form-input ${errors.password ? 'error' : ''}`}
+              />
+              {errors.password && <span className="error-text">{errors.password}</span>}
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button 
+              type="submit" 
+              className="setup-btn primary"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <div className="loading-spinner small"></div>
+                  Connecting...
+                </>
+              ) : (
+                'Connect to IPTV Service'
+              )}
+            </button>
+
+            <button 
+              type="button" 
+              className="setup-btn secondary"
+              onClick={fillDemoCredentials}
+              disabled={isLoading}
+            >
+              Use Demo Credentials
+            </button>
+          </div>
+        </form>
+
+        <div className="setup-info">
+          <h3>ℹ️ What you need:</h3>
+          <ul>
+            <li>Your IPTV provider's server URL</li>
+            <li>Username and password from your provider</li>
+            <li>Make sure your subscription is active</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Video player component
 const VideoPlayer = ({ streamUrl, onError }) => {
   const videoRef = useRef(null);
@@ -110,7 +278,12 @@ const CategorySelector = ({ categories, activeCategory, onSelectCategory, type }
 
 // Main App component
 function App() {
-  // State management
+  // Setup state
+  const [isSetup, setIsSetup] = useState(false);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [currentCredentials, setCurrentCredentials] = useState(null);
+
+  // App state
   const [currentStream, setCurrentStream] = useState(null);
   const [liveChannels, setLiveChannels] = useState([]);
   const [vodMovies, setVodMovies] = useState([]);
@@ -124,40 +297,77 @@ function App() {
   const [searchResults, setSearchResults] = useState({ live: [], vod: [], series: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [playlistInfo, setPlaylistInfo] = useState({});
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-  // Fetch playlist info
-  const fetchPlaylistInfo = async () => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/playlist-info`);
-      const data = await response.json();
-      setPlaylistInfo(data);
-    } catch (err) {
-      console.error('Error fetching playlist info:', err);
+  // Check for saved credentials on app start
+  useEffect(() => {
+    const savedCredentials = localStorage.getItem('iptvCredentials');
+    if (savedCredentials) {
+      try {
+        const credentials = JSON.parse(savedCredentials);
+        setCurrentCredentials(credentials);
+        setIsSetup(true);
+      } catch (e) {
+        console.error('Error loading saved credentials:', e);
+        localStorage.removeItem('iptvCredentials');
+      }
     }
-  };
+  }, []);
 
-  // Test connection
-  const testConnection = async () => {
-    setLoading(true);
+  // Setup IPTV connection
+  const handleSetup = async (credentials) => {
+    setSetupLoading(true);
+    setError(null);
+
     try {
-      const response = await fetch(`${BACKEND_URL}/api/xtream/test`);
-      const data = await response.json();
-      if (data.status === 'success') {
-        setConnectionStatus('connected');
-        setError(null);
+      // Send credentials to backend for testing
+      const response = await fetch(`${BACKEND_URL}/api/setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials)
+      });
+
+      const result = await response.json();
+      
+      if (result.status === 'success' || result.status === 'demo_mode') {
+        // Save credentials and proceed
+        localStorage.setItem('iptvCredentials', JSON.stringify(credentials));
+        setCurrentCredentials(credentials);
+        setIsSetup(true);
+        setConnectionStatus(result.status === 'success' ? 'connected' : 'demo');
+        
+        // Load initial data
+        await Promise.all([
+          fetchCategories(),
+          fetchStreams('live')
+        ]);
       } else {
-        setConnectionStatus('error');
-        setError(data.message);
+        setError(result.message || 'Failed to connect to IPTV service');
       }
     } catch (err) {
-      setConnectionStatus('error');
+      console.error('Setup error:', err);
       setError('Failed to connect to server');
     }
-    setLoading(false);
+    
+    setSetupLoading(false);
+  };
+
+  // Reset setup (logout)
+  const resetSetup = () => {
+    localStorage.removeItem('iptvCredentials');
+    setIsSetup(false);
+    setCurrentCredentials(null);
+    setConnectionStatus('disconnected');
+    setCurrentStream(null);
+    setLiveChannels([]);
+    setVodMovies([]);
+    setSeriesShows([]);
+    setActiveTab('live');
+    setSearchQuery('');
   };
 
   // Fetch categories
@@ -180,7 +390,6 @@ function App() {
       setSeriesCategories(seriesData.categories || []);
     } catch (err) {
       console.error('Error fetching categories:', err);
-      setError('Failed to load categories');
     }
   };
 
@@ -292,34 +501,6 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    fetchPlaylistInfo();
-    testConnection();
-    fetchCategories();
-    fetchStreams('live'); // Load initial content
-  }, []);
-
-  // Update connection status based on test results
-  useEffect(() => {
-    const updateConnectionStatus = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/xtream/test`);
-        const data = await response.json();
-        if (data.status === 'success') {
-          setConnectionStatus('connected');
-        } else if (data.status === 'demo_mode') {
-          setConnectionStatus('demo');
-        } else {
-          setConnectionStatus('error');
-        }
-      } catch (err) {
-        setConnectionStatus('error');
-      }
-    };
-    
-    updateConnectionStatus();
-  }, [BACKEND_URL]);
-
   // Handle search input
   useEffect(() => {
     const delayedSearch = setTimeout(() => {
@@ -333,18 +514,28 @@ function App() {
     return () => clearTimeout(delayedSearch);
   }, [searchQuery]);
 
+  // Show setup form if not configured
+  if (!isSetup) {
+    return <SetupForm onSetup={handleSetup} isLoading={setupLoading} />;
+  }
+
   return (
     <div className="app">
       {/* Header */}
       <header className="app-header">
         <div className="header-content">
-          <h1>📺 {playlistInfo.name || 'IPTV Player'}</h1>
-          <div className="connection-status">
-            <span className={`status-indicator ${connectionStatus}`}></span>
-            {connectionStatus === 'connected' && 'Connected'}
-            {connectionStatus === 'demo' && 'Demo Mode'}
-            {connectionStatus === 'error' && 'Disconnected'}
-            {connectionStatus === 'disconnected' && 'Disconnected'}
+          <h1>📺 {currentCredentials?.playlistName || 'IPTV Player'}</h1>
+          <div className="header-controls">
+            <div className="connection-status">
+              <span className={`status-indicator ${connectionStatus}`}></span>
+              {connectionStatus === 'connected' && 'Connected'}
+              {connectionStatus === 'demo' && 'Demo Mode'}
+              {connectionStatus === 'error' && 'Disconnected'}
+              {connectionStatus === 'disconnected' && 'Disconnected'}
+            </div>
+            <button onClick={resetSetup} className="logout-btn">
+              ⚙️ Change Settings
+            </button>
           </div>
         </div>
       </header>
@@ -427,7 +618,7 @@ function App() {
           {error && (
             <div className="error-message">
               <p>⚠️ {error}</p>
-              <button onClick={testConnection}>Retry Connection</button>
+              <button onClick={() => window.location.reload()}>Retry</button>
             </div>
           )}
 

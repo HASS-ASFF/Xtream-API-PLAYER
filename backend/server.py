@@ -7,6 +7,7 @@ import asyncio
 from urllib.parse import urljoin
 import logging
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -31,31 +32,22 @@ app.add_middleware(
 MONGO_URL = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
 DB_NAME = os.getenv('DB_NAME', 'iptv_database')
 
-# IPTV Configuration
-XTREAM_URL = os.getenv('XTREAM_URL')
-XTREAM_USERNAME = os.getenv('XTREAM_USERNAME')
-XTREAM_PASSWORD = os.getenv('XTREAM_PASSWORD')
-PLAYLIST_NAME = os.getenv('PLAYLIST_NAME', 'My IPTV')
-
-# Log configuration
-logger.info(f"XTREAM_URL: {XTREAM_URL}")
-logger.info(f"XTREAM_USERNAME: {XTREAM_USERNAME}")
-logger.info(f"PLAYLIST_NAME: {PLAYLIST_NAME}")
-
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
+# Pydantic models for API requests
+class XtreamCredentials(BaseModel):
+    playlistName: str = ""
+    username: str
+    password: str
+    serverUrl: str
+
+# Global variable to store current credentials
+current_credentials: Optional[XtreamCredentials] = None
+
 class XtreamAPI:
-    def __init__(self, url: str, username: str, password: str):
-        if not url or not username or not password:
-            logger.warning("Missing IPTV credentials. Some features will be disabled.")
-            self.base_url = None
-            self.username = None
-            self.password = None
-            self.session = None
-            return
-            
-        self.base_url = url.rstrip('/')
+    def __init__(self, url: str = None, username: str = None, password: str = None):
+        self.base_url = url.rstrip('/') if url else None
         self.username = username
         self.password = password
         self.session = None
@@ -63,6 +55,12 @@ class XtreamAPI:
     def is_configured(self) -> bool:
         """Check if the API is properly configured"""
         return all([self.base_url, self.username, self.password])
+    
+    def update_credentials(self, credentials: XtreamCredentials):
+        """Update API credentials"""
+        self.base_url = credentials.serverUrl.rstrip('/')
+        self.username = credentials.username
+        self.password = credentials.password
     
     async def get_session(self):
         if self.session is None:
@@ -112,19 +110,58 @@ class XtreamAPI:
             logger.error(f"Request error: {str(e)}")
             return []
     
+    async def test_connection(self) -> dict:
+        """Test connection to Xtream API"""
+        if not self.is_configured():
+            return {"status": "error", "message": "No credentials configured"}
+        
+        try:
+            categories = await self.get_live_categories()
+            if categories and len(categories) > 0:
+                return {
+                    "status": "success",
+                    "message": "Connection successful",
+                    "categories_count": len(categories)
+                }
+            else:
+                return {
+                    "status": "demo_mode", 
+                    "message": "IPTV service unavailable, using demo data"
+                }
+        except Exception as e:
+            logger.error(f"Connection test failed: {str(e)}")
+            return {
+                "status": "demo_mode",
+                "message": "IPTV service unavailable, using demo data"
+            }
+    
     async def get_live_categories(self):
         """Get live TV categories"""
-        if not self.is_configured():
-            # Return demo data when not configured
-            return [
-                {"category_id": 1, "category_name": "Sports"},
-                {"category_id": 2, "category_name": "News"},
-                {"category_id": 3, "category_name": "Entertainment"},
-                {"category_id": 4, "category_name": "Movies"}
-            ]
-        url = self.build_url('get_live_categories')
-        result = await self.make_request(url)
-        return result if result else []
+        # First try the real API if configured
+        if self.is_configured():
+            try:
+                url = self.build_url('get_live_categories')
+                session = await self.get_session()
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            return data
+                        elif isinstance(data, dict) and data:
+                            return [data]
+                    
+                # API failed or returned empty, fall back to demo data
+                logger.info("API failed or empty, using demo categories")
+            except Exception as e:
+                logger.error(f"API error, using demo categories: {str(e)}")
+        
+        # Return demo data when not configured or API fails
+        return [
+            {"category_id": 1, "category_name": "Sports"},
+            {"category_id": 2, "category_name": "News"},
+            {"category_id": 3, "category_name": "Entertainment"},
+            {"category_id": 4, "category_name": "Movies"}
+        ]
     
     async def get_live_streams(self, category_id: Optional[int] = None):
         """Get live streams"""
@@ -189,7 +226,8 @@ class XtreamAPI:
         if not self.is_configured():
             return []
         url = self.build_url('get_vod_categories')
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_vod_streams(self, category_id: Optional[int] = None):
         """Get VOD streams"""
@@ -199,14 +237,16 @@ class XtreamAPI:
         if category_id:
             params['category_id'] = category_id
         url = self.build_url('get_vod_streams', **params)
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_series_categories(self):
         """Get series categories"""
         if not self.is_configured():
             return []
         url = self.build_url('get_series_categories')
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_series(self, category_id: Optional[int] = None):
         """Get series"""
@@ -216,14 +256,16 @@ class XtreamAPI:
         if category_id:
             params['category_id'] = category_id
         url = self.build_url('get_series', **params)
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     async def get_short_epg(self, stream_id: int, limit: int = 10):
         """Get EPG for a stream"""
         if not self.is_configured():
             return []
         url = self.build_url('get_short_epg', stream_id=stream_id, limit=limit)
-        return await self.make_request(url)
+        result = await self.make_request(url)
+        return result if result else []
     
     def get_stream_url(self, stream_id: int, stream_type: str = 'live'):
         """Generate stream URL"""
@@ -238,20 +280,12 @@ class XtreamAPI:
             return f"{self.base_url}/series/{self.username}/{self.password}/{stream_id}.mkv"
         return ""
 
-# Initialize Xtream API (with error handling)
-try:
-    xtream_api = XtreamAPI(XTREAM_URL, XTREAM_USERNAME, XTREAM_PASSWORD)
-except Exception as e:
-    logger.error(f"Failed to initialize Xtream API: {str(e)}")
-    xtream_api = XtreamAPI(None, None, None)  # Create disabled instance
+# Initialize Xtream API without credentials (will be set via setup endpoint)
+xtream_api = XtreamAPI()
 
 @app.on_event("startup")
 async def startup_event():
     logger.info("IPTV Player API starting up...")
-    if xtream_api.is_configured():
-        logger.info(f"Connecting to Xtream server: {XTREAM_URL}")
-    else:
-        logger.warning("IPTV credentials not configured. Running in limited mode.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -263,40 +297,33 @@ async def health_check():
     return {
         "status": "healthy", 
         "service": "IPTV Player API",
-        "iptv_configured": xtream_api.is_configured()
+        "configured": xtream_api.is_configured()
     }
+
+@app.post("/api/setup")
+async def setup_credentials(credentials: XtreamCredentials):
+    """Setup IPTV credentials and test connection"""
+    global current_credentials
+    
+    try:
+        # Update API with new credentials
+        xtream_api.update_credentials(credentials)
+        current_credentials = credentials
+        
+        # Test connection
+        test_result = await xtream_api.test_connection()
+        
+        logger.info(f"Setup result: {test_result}")
+        
+        return test_result
+    except Exception as e:
+        logger.error(f"Setup failed: {str(e)}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/xtream/test")
 async def test_connection():
-    """Test Xtream API connection"""
-    if not xtream_api.is_configured():
-        return {
-            "status": "demo_mode", 
-            "message": "Running in demo mode with sample data",
-            "configured": False
-        }
-    
-    try:
-        categories = await xtream_api.get_live_categories()
-        if categories:
-            return {
-                "status": "success",
-                "message": "Connection successful",
-                "categories_count": len(categories) if isinstance(categories, list) else 0
-            }
-        else:
-            return {
-                "status": "demo_mode",
-                "message": "IPTV service unavailable, showing demo data",
-                "configured": True
-            }
-    except Exception as e:
-        logger.error(f"Connection test failed: {str(e)}")
-        return {
-            "status": "demo_mode", 
-            "message": "IPTV service unavailable, showing demo data",
-            "configured": True
-        }
+    """Test current Xtream API connection"""
+    return await xtream_api.test_connection()
 
 @app.get("/api/categories/live")
 async def get_live_categories():
@@ -423,9 +450,10 @@ async def search_content(q: str, type: str = "all"):
 @app.get("/api/playlist-info")
 async def get_playlist_info():
     """Get playlist information"""
+    global current_credentials
     return {
-        "name": PLAYLIST_NAME,
-        "server": XTREAM_URL,
+        "name": current_credentials.playlistName if current_credentials else "IPTV Player",
+        "server": current_credentials.serverUrl if current_credentials else None,
         "status": "active" if xtream_api.is_configured() else "not_configured",
         "configured": xtream_api.is_configured()
     }
@@ -433,4 +461,3 @@ async def get_playlist_info():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
-
