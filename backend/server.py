@@ -88,22 +88,29 @@ class XtreamAPI:
         param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
         return f"{url}?{param_str}"
     
-    async def make_request(self, url: str) -> Dict[Any, Any]:
+    async def make_request(self, url: str) -> List[Dict[Any, Any]]:
         """Make HTTP request to Xtream API"""
         if not url:
-            return {}
+            return []
             
         session = await self.get_session()
         try:
-            async with session.get(url) as response:
+            async with session.get(url, timeout=10) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    # Ensure we always return a list for consistent frontend handling
+                    if isinstance(data, list):
+                        return data
+                    elif isinstance(data, dict):
+                        return [data]
+                    else:
+                        return []
                 else:
                     logger.error(f"API request failed: {response.status}")
-                    return {}
+                    return []
         except Exception as e:
             logger.error(f"Request error: {str(e)}")
-            return {}
+            return []
     
     async def get_live_categories(self):
         """Get live TV categories"""
